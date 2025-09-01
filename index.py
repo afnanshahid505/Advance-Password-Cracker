@@ -27,7 +27,7 @@ root = tk.Tk()
 root.title("🔐 Advanced Password cracker")
 root.geometry("400x300")
 #background image
-bg_image = Image.open("background.jpg")  
+bg_image = Image.open("images/background.jpg")  
 bg_image = bg_image.resize((1500, 1400))    
 bg_photo = ImageTk.PhotoImage(bg_image)
 
