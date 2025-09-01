@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import  filedialog, messagebox, Toplevel, Text, Scrollbar,scrolledtext
+from tkinter import  filedialog, messagebox, Toplevel, Text, Scrollbar,scrolledtext,ttk
 from PIL import Image, ImageTk 
 import webbrowser
 import os
@@ -98,6 +98,8 @@ def wordlist():
 
 def rainbow():
     messagebox.showinfo("rainbow attack", "rainbow attack coming soon...")
+def wifi():
+    messagebox.showinfo("Wifi-hack","wifi hack coming soom")    
 
 def about_tool():
     
@@ -128,14 +130,31 @@ label = tk.Label(root, text="Advanced Password cracker", font=("Arial", 16, "bol
 label.pack(pady=20)
 
 # Buttons
-btn_abttool = tk.Button(root, text="Project Info", font=("Arial", 12), width=15, command=about_tool)
-btn_abttool.pack(pady=30)
+# --- Round Button using Canvas ---
 
-btn_wordlist = tk.Button(root, text="wordlist attack", font=("Arial", 12), width=25, command=wordlist)
-btn_wordlist.pack(pady=(150,0))
+canvas = tk.Canvas(root, width=250, height=100, highlightthickness=0)
+canvas.pack(pady=10)
+canvas.create_image(0,40,image=bg_photo,anchor="center")
 
-btn_rainbow = tk.Button(root, text="Rainbow table attack", font=("Arial", 12), width=25, command=rainbow)
-btn_rainbow.pack(pady=10)
+# Draw rounded rectangle (pill shape button)
+round_btn = canvas.create_oval(10, 10, 220, 75, fill="#EAF1EA", outline="blue")  
+
+# Add button text
+btn_text = canvas.create_text(105, 40, text="Project Info", fill="#000000", font=("Verdana", 20, " italic underline"))
+
+# Bind click event to both shape + text
+canvas.tag_bind(round_btn, "<Button-1>", lambda e: about_tool())
+canvas.tag_bind(btn_text, "<Button-1>", lambda e: about_tool())
+
+
+btn_wordlist = tk.Button(root, text="wordlist attack", bg="#000000",fg="#EBEBF2",font=("Arial", 20,"bold"), width=30, command=wordlist)
+btn_wordlist.pack(pady=(170,0),padx=(300,0))
+
+
+btn_rainbow = tk.Button(root, text="Rainbow table attack", bg="#000000",fg="#EBEBF2",font=("Arial", 20,"bold"), width=30, command=rainbow)
+btn_rainbow.pack(pady=10,padx=(300,0))
+btn_wifi = tk.Button(root, text="Wifi password attack", bg="#000000",fg="#EBEBF2",font=("Arial", 20,"bold"), width=30, command=wifi)
+btn_wifi.pack(pady=10,padx=(300,0))
 
 # Run the app
 root.mainloop()
