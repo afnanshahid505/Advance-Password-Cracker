@@ -9,6 +9,7 @@ import os
 import pywifi # pyright: ignore[reportMissingImports]
 from pywifi import const   # pyright: ignore[reportMissingImports]
 from PIL import Image, ImageTk # pyright: ignore[reportMissingImports]
+from passlib.hash import nthash  # type: ignore
 import itertools
 import string
 import pathlib
@@ -214,7 +215,6 @@ class ThreadedUIWorker:
 
 # ---------------- NTLM Page ----------------
 
-from passlib.hash import nthash  # type: ignore
 class NTLMPage:
     def __init__(self, parent):
         self.window = tk.Toplevel(parent)
@@ -222,46 +222,42 @@ class NTLMPage:
         self.window.geometry("700x550")
         self.window.config(bg="#3498db")
 
-        tk.Label(
-            self.window, text="NTLM Hash Cracker",
-            font=("Arial", 16, "bold"), fg="white", bg="#3498db"
-        ).pack(pady=10)
+        tk.Label(self.window, text="NTLM Hash Cracker", font=("Arial", 16, "bold"),
+                 fg="white", bg="#3498db").pack(pady=10)
 
         self.output = ScrolledText(self.window, wrap=tk.WORD, height=20, width=80)
         self.output.pack(pady=10)
 
         self.targets_path = None
         self.wordlist_path = None
-        self.stop_flag = {"stop": False}  # Stop signal
+        self.stop_flag = False
 
         # File selection buttons
         btn_frame = tk.Frame(self.window, bg="#3498db")
         btn_frame.pack(pady=5)
-
         tk.Button(btn_frame, text="Upload Targets File", bg="#2980b9", fg="white",
                   command=self.upload_targets, width=20).grid(row=0, column=0, padx=5)
         tk.Button(btn_frame, text="Choose Wordlist", bg="#8e44ad", fg="white",
                   command=self.choose_wordlist, width=20).grid(row=0, column=1, padx=5)
 
-        # Start and Stop buttons side by side
+        # Start/Stop buttons
         run_frame = tk.Frame(self.window, bg="#3498db")
         run_frame.pack(pady=5)
-        tk.Button(run_frame, text="Start Check", bg="#e67e22", fg="white",
-                  command=self.start_check, width=20).grid(row=0, column=0, padx=5)
-        tk.Button(run_frame, text="Stop Check", bg="#e74c3c", fg="white",
-                  command=self.stop_check, width=20).grid(row=0, column=1, padx=5)
+        tk.Button(run_frame, text="Start Crack", bg="#e67e22", fg="white",
+                  command=self.start_crack, width=20).grid(row=0, column=0, padx=5)
+        tk.Button(run_frame, text="Stop Crack", bg="#e74c3c", fg="white",
+                  command=self.stop_crack, width=20).grid(row=0, column=1, padx=5)
 
-        # Back button centered below Start/Stop
+        # Back and clear buttons
         back_frame = tk.Frame(self.window, bg="#3498db")
         back_frame.pack(pady=5)
         tk.Button(back_frame, text="Back", bg="#34495e", fg="white",
                   command=self.close, width=20).pack()
-
         tk.Button(self.window, text="Clear Output", bg="#c0392b", fg="white",
                   command=lambda: self.output.delete(1.0, tk.END)).pack(pady=5)
 
-    def log(self, message):
-        self.output.insert(tk.END, message + "\n")
+    def log(self, msg):
+        self.output.insert(tk.END, msg + "\n")
         self.output.see(tk.END)
         self.output.update_idletasks()
 
@@ -277,21 +273,19 @@ class NTLMPage:
             self.wordlist_path = path
             self.log(f"[*] Wordlist loaded: {path}")
 
-    def start_check(self):
+    def start_crack(self):
         if not self.targets_path or not self.wordlist_path:
             messagebox.showwarning("Missing Input", "Please upload both targets file and wordlist.")
             return
-        self.stop_flag["stop"] = False
-        threading.Thread(target=self.fast_ntlm_check, daemon=True).start()
+        self.stop_flag = False
+        threading.Thread(target=self.crack_ntlm, daemon=True).start()
 
-    def stop_check(self):
-        self.stop_flag["stop"] = True
+    def stop_crack(self):
+        self.stop_flag = True
         self.log("[!] Stop signal sent. Cracking will terminate shortly...")
 
-    def fast_ntlm_check(self):
+    def crack_ntlm(self):
         try:
-            self.log("Starting NTLM hash check (super fast mode)...")
-
             if not os.path.exists(self.targets_path) or not os.path.exists(self.wordlist_path):
                 self.log("[-] Error: One of the files does not exist.")
                 return
@@ -304,26 +298,23 @@ class NTLMPage:
 
             with open(self.wordlist_path, "r", encoding="utf-8", errors="ignore") as wf:
                 for line in wf:
-                    if self.stop_flag["stop"]:
+                    if self.stop_flag:
                         self.log("[!] Cracking stopped by user.")
                         break
-
                     password = line.strip()
                     if not password:
                         continue
 
                     checked += 1
                     candidate_hash = nthash.hash(password).lower()
-
                     if candidate_hash in targets:
                         matches[candidate_hash] = password
+                        self.log(f"[+] Found: {password} -> {candidate_hash}")
 
-                    if checked % 50000 == 0:
-                        self.log(f"[*] Candidates checked: {checked}")
+                    if checked % 10000 == 0:
+                        self.log(f"[*] Checked {checked} passwords so far...")
 
-            self.log(f"Total targets: {len(targets)}")
-            self.log(f"Candidates checked: {checked}")
-
+            self.log(f"Total candidates checked: {checked}")
             if matches:
                 self.log(f"[+] Matches found ({len(matches)}):")
                 for h, pwd in matches.items():
@@ -332,145 +323,174 @@ class NTLMPage:
                 self.log("[-] No matches found.")
 
         except Exception as e:
-            self.log(f"[!] Error occurred: {str(e)}")
+            self.log(f"[!] Error: {str(e)}")
 
     def close(self):
-        self.stop_flag["stop"] = True
+        self.stop_flag = True
         self.window.destroy()
         
-# ---------------- MD5 Page ----------------
+# ---------------- UNIVERSAL HASH CRACKER ----------------
+import tkinter as tk
+from tkinter import filedialog, messagebox, scrolledtext
+import hashlib
+import threading
 
-class MD5Page:
+class UniversalHashCrackerPage:
     def __init__(self, parent):
-        self.window = tk.Toplevel(parent)
-        self.window.title("MD5 Cracker (Safe Mode)")
-        self.window.geometry("700x500")
-        self.window.config(bg="#7f8c8d")
+        self.parent = parent
+        self.stop_flag = False
+        self.checked_count = 0
 
-        tk.Label(
-            self.window, text="MD5 — Safe Check",
-            font=("Arial", 16, "bold"), fg="white", bg="#7f8c8d"
-        ).pack(pady=10)
+        win = tk.Toplevel(parent)
+        win.title("Universal Hash Cracker (Auto-detect MD5/SHA1/SHA256)")
+        win.geometry("820x720")
 
-        self.output = ScrolledText(self.window, wrap=tk.WORD, height=15, width=80)
+        # --- Hash Input ---
+        tk.Label(win, text="Enter Hash (or upload hash file):", font=("Arial", 12, "bold")).pack(pady=5)
+        self.hash_entry = tk.Entry(win, width=95, font=("Courier", 11))
+        self.hash_entry.pack(pady=5)
+
+        # --- Upload buttons ---
+        upload_frame = tk.Frame(win)
+        upload_frame.pack(pady=8)
+        tk.Button(upload_frame, text="Upload Hash File", bg="#64b9ff", fg="white",
+                  font=("Arial", 11, "bold"), command=self.load_hash_file).grid(row=0, column=0, padx=10)
+        tk.Button(upload_frame, text="Upload Wordlist", bg="#75c0fd", fg="white",
+                  font=("Arial", 11, "bold"), command=self.load_wordlist).grid(row=0, column=1, padx=10)
+
+        # --- Action Buttons ---
+        btn_frame = tk.Frame(win)
+        btn_frame.pack(pady=12)
+        tk.Button(btn_frame, text="Start Crack", bg="#27ae60", fg="white",
+                  font=("Arial", 12, "bold"), command=self.start_crack).grid(row=0, column=0, padx=8)
+        tk.Button(btn_frame, text="Stop Crack", bg="#c0392b", fg="white",
+                  font=("Arial", 12, "bold"), command=self.stop_crack).grid(row=0, column=1, padx=8)
+        tk.Button(btn_frame, text="Clear Output", bg="#f39c12", fg="black",
+                  font=("Arial", 12, "bold"), command=self.clear_output).grid(row=0, column=2, padx=8)
+
+        # --- Output log ---
+        self.output = scrolledtext.ScrolledText(win, height=15, width=100, font=("Courier", 10))
         self.output.pack(pady=10)
 
-        self.hash_file_path = None
-        self.wordlist_path = None
-        self.stop_flag = False  # For stopping the cracking loop
+        # --- Final Results ---
+        tk.Label(win, text="✅ Cracked Results:", font=("Arial", 13, "bold"), fg="green").pack(pady=3)
+        self.results_box = scrolledtext.ScrolledText(win, height=8, width=100, font=("Courier", 10), fg="darkgreen")
+        self.results_box.pack(pady=5)
 
-        button_frame = tk.Frame(self.window, bg="#7f8c8d")
-        button_frame.pack(pady=5)
+        # --- Checked count ---
+        self.count_label = tk.Label(win, text="Checked: 0 passwords", font=("Arial", 12, "bold"), fg="blue")
+        self.count_label.pack(pady=5)
 
-        tk.Button(
-            button_frame, text="Upload Targets File", bg="#f39c12", fg="white",
-            command=self.upload_md5_hash, width=20
-        ).grid(row=0, column=0, padx=5)
+        # --- Back Button ---
+        tk.Button(win, text="Back", bg="#2980b9", fg="white",
+                  font=("Arial", 12, "bold"), command=win.destroy).pack(pady=5)
 
-        tk.Button(
-            button_frame, text="Choose Wordlist", bg="#8e44ad", fg="white",
-            command=self.choose_wordlist, width=20
-        ).grid(row=0, column=1, padx=5)
+        # State
+        self.wordlist = None
+        self.hash_file = None
+        self.win = win
 
-        # Row for Start and Stop buttons
-        action_frame = tk.Frame(self.window, bg="#7f8c8d")
-        action_frame.pack(pady=5)
+    # Load hash file
+    def load_hash_file(self):
+        self.hash_file = filedialog.askopenfilename(title="Select Hash File", filetypes=[("Text Files", "*.txt")])
+        if self.hash_file:
+            self.log(f"[*] Hash file loaded: {self.hash_file}")
 
-        tk.Button(
-            action_frame, text="Start Check", bg="#e67e22", fg="white",
-            command=self.start_cracking, width=20
-        ).grid(row=0, column=0, padx=10)
+    # Load wordlist
+    def load_wordlist(self):
+        self.wordlist = filedialog.askopenfilename(title="Select Wordlist", filetypes=[("Text Files", "*.txt")])
+        if self.wordlist:
+            self.log(f"[*] Wordlist loaded: {self.wordlist}")
 
-        tk.Button(
-            action_frame, text="Stop Check", bg="#e74c3c", fg="white",
-            command=self.stop_cracking, width=20
-        ).grid(row=0, column=1, padx=10)
-
-        tk.Button(
-            self.window, text="Clear Output", bg="#c0392b", fg="white",
-            command=lambda: self.output.delete(1.0, tk.END)
-        ).pack(pady=5)
-
-        tk.Button(
-            self.window, text="Back", bg="#34495e", fg="white",
-            command=self.close
-        ).pack(pady=5)
-
-    def log(self, message):
-        self.output.insert(tk.END, message + "\n")
+    # Logging helper
+    def log(self, msg):
+        self.output.insert(tk.END, msg + "\n")
         self.output.see(tk.END)
-        self.output.update()
 
-    def upload_md5_hash(self):
-        self.hash_file_path = filedialog.askopenfilename(
-            title="Select Targets File",
-            filetypes=[("Text Files", "*.txt")]
-        )
-        if self.hash_file_path:
-            self.log(f"[*] Targets file loaded: {self.hash_file_path}")
+    # Results helper
+    def add_result(self, msg):
+        self.results_box.insert(tk.END, msg + "\n")
+        self.results_box.see(tk.END)
 
-    def choose_wordlist(self):
-        self.wordlist_path = filedialog.askopenfilename(
-            title="Select Wordlist File",
-            filetypes=[("Text Files", "*.txt")]
-        )
-        if self.wordlist_path:
-            self.log(f"[*] Wordlist loaded: {self.wordlist_path}")
+    # Clear output
+    def clear_output(self):
+        self.output.delete(1.0, tk.END)
+        self.results_box.delete(1.0, tk.END)
+        self.count_label.config(text="Checked: 0 passwords")
+        self.checked_count = 0
 
-    def start_cracking(self):
-        if not self.hash_file_path or not self.wordlist_path:
-            messagebox.showwarning("Missing Input", "Please upload both targets file and wordlist.")
+    # Stop flag
+    def stop_crack(self):
+        self.stop_flag = True
+        self.log("[!] Stopping crack process...")
+
+    # Start cracking
+    def start_crack(self):
+        if not self.wordlist:
+            messagebox.showwarning("Missing", "Please upload a wordlist.")
+            return
+        if not self.hash_entry.get() and not self.hash_file:
+            messagebox.showwarning("Missing", "Please enter a hash or upload a hash file.")
             return
         self.stop_flag = False
-        threading.Thread(
-            target=self.safe_md5_check,
-            args=(self.hash_file_path, self.wordlist_path),
-            daemon=True
-        ).start()
+        self.checked_count = 0
+        self.clear_output()
+        threading.Thread(target=self.crack, daemon=True).start()
 
-    def stop_cracking(self):
-        self.stop_flag = True
-        self.log("[*] Stopping the cracking process...")
-
-    def safe_md5_check(self, targets_file, wordlist_file):
-        self.log("Starting MD5 cracking...\n")
-
+    # Crack logic with auto-detect
+    def crack(self):
         # Load target hashes
-        with open(targets_file, "r", encoding="utf-8", errors="ignore") as tf:
-            targets = {line.strip().lower() for line in tf if line.strip()}
+        targets = []
+        if self.hash_file:
+            with open(self.hash_file, "r", encoding="utf-8") as f:
+                targets = [line.strip() for line in f if line.strip()]
+        else:
+            targets = [self.hash_entry.get().strip()]
 
-        matches = []
-        total_checked = 0
+        # Load wordlist
+        with open(self.wordlist, "r", encoding="utf-8") as f:
+            words = [w.strip() for w in f if w.strip()]
 
-        with open(wordlist_file, "r", encoding="utf-8", errors="ignore") as wf:
-            for line in wf:
+        # Supported hash algorithms
+        algos = {
+            "md5": hashlib.md5,
+            "sha1": hashlib.sha1,
+            "sha256": hashlib.sha256
+        }
+
+        for target in targets:
+            self.log(f"\n[*] Cracking hash: {target}")
+            found = False
+            for word in words:
                 if self.stop_flag:
-                    self.log("[*] Cracking stopped by user.")
+                    self.log("[!] Crack stopped by user.")
                     return
 
-                candidate = line.strip()
-                if not candidate:
-                    continue
+                # Try all algorithms
+                match = False
+                for name, func in algos.items():
+                    hashed = func(word.encode()).hexdigest()
+                    if hashed == target:
+                        match = True
+                        break
 
-                # Hash candidate with MD5
-                candidate_hash = hashlib.md5(candidate.encode()).hexdigest()
-                total_checked += 1
+                # increment count
+                self.checked_count += 1
+                self.count_label.config(text=f"Checked: {self.checked_count} passwords")
 
-                if candidate_hash in targets:
-                    self.log(f"[+] Match Found: {candidate} -> {candidate_hash}")
-                    matches.append((candidate, candidate_hash))
+                self.log(f"Trying: {word}")
+                if match:
+                    result = f"[+] {target}  →  {word} (detected: {name})"
+                    self.log(result)
+                    self.add_result(result)
+                    found = True
+                    break
 
-        self.log(f"\nTotal targets: {len(targets)}")
-        self.log(f"Total candidates checked: {total_checked}")
-        if matches:
-            self.log(f"[+] {len(matches)} matches found:")
-            for password, hsh in matches:
-                self.log(f"    {password} -> {hsh}")
-        else:
-            self.log("[-] No matches found.")
+            if not found:
+                self.log(f"[-] Password not found for {target}")
+                self.add_result(f"❌ {target} → Not Found")
 
-    def close(self):
-        self.window.destroy()
+
 
 # ---------------- Rainbow  ----------------
 class RainbowPage:
@@ -636,14 +656,15 @@ btn_ntlm = tk.Button(root, text="NTLM Cracker", bg="#3498db", fg="#FFFFFF",
                      command=lambda: NTLMPage(root))
 btn_ntlm.pack(pady=5, padx=(300, 0))
 
-btn_md5 = tk.Button(root, text="MD5 Cracker", bg="#F47D7D", fg="#0D0D11",
-                    font=("Arial", 20, "bold"), width=30,
-                    command=lambda: MD5Page(root))
-btn_md5.pack(pady=5, padx=(300, 0))
+btn_hash = tk.Button(root, text="Hash Cracker (MD5 / SHA1 / SHA256)", bg="#1264de", fg="#FFFFFF",
+                     font=("Arial", 20, "bold"), width=30,
+                     command=lambda: UniversalHashCrackerPage(root))
+btn_hash.pack(pady=5, padx=(300, 0))
 
 btn_rainbow = tk.Button(root, text="Rainbow Attack", bg="#EFF552", fg="#0F0F14",
                         font=("Arial", 20, "bold"), width=30,
                         command=lambda: RainbowPage(root))
 btn_rainbow.pack(pady=5, padx=(300, 0))
+
 
 root.mainloop()
