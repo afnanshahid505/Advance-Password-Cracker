@@ -500,17 +500,17 @@ class RainbowPage:
         self.window.geometry("700x500")
         self.window.config(bg="#8e44ad")
 
-        tk.Label(self.window, text="Rainbow Table (Safe) — JSON key matching",
+        tk.Label(self.window, text="Rainbow Table (Safe) — Hash Lookup",
                  font=("Arial", 16, "bold"), fg="white", bg="#8e44ad").pack(pady=10)
 
         self.output = scrolledtext.ScrolledText(self.window, wrap=tk.WORD, height=15, width=80)
         self.output.pack(pady=10)
 
         # Buttons
+        tk.Button(self.window, text="Upload Hash File", bg="#2980b9", fg="white",
+                  command=self.upload_hashes).pack(pady=5)
         tk.Button(self.window, text="Upload Rainbow JSON", bg="#9b59b6", fg="white",
                   command=self.upload_rainbow_json).pack(pady=5)
-        tk.Button(self.window, text="Upload Wordlist", bg="#2980b9", fg="white",
-                  command=self.upload_wordlist).pack(pady=5)
 
         # Row for Start and Stop buttons
         frame = tk.Frame(self.window, bg="#8e44ad")
@@ -528,9 +528,9 @@ class RainbowPage:
         tk.Button(self.window, text="Back", bg="#34495e", fg="white",
                   command=self.close).pack(pady=5)
 
+        # Storage
+        self.hashes_file = None
         self.rainbow_data = None
-        self.wordlist_file = None
-        self.json_path = None
 
         self.attack_thread = None
         self.stop_flag = threading.Event()
@@ -539,31 +539,34 @@ class RainbowPage:
         self.output.insert(tk.END, msg + "\n")
         self.output.see(tk.END)
 
+    def upload_hashes(self):
+        file_path = filedialog.askopenfilename(
+            title="Select Hash File", filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")])
+        if file_path:
+            self.hashes_file = file_path
+            self.log("[*] Hash file loaded successfully.")
+            if self.rainbow_data:
+                self.start_btn.config(state="normal")
+
     def upload_rainbow_json(self):
         file_path = filedialog.askopenfilename(
             title="Select Rainbow JSON File", filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")])
         if file_path:
             try:
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    self.rainbow_data = json.load(f)
-                self.json_path = file_path
+                    self.rainbow_data = json.load(f)   # {hash: password}
                 self.log("[*] Rainbow JSON loaded successfully.")
+                if self.hashes_file:
+                    self.start_btn.config(state="normal")
             except Exception as e:
                 messagebox.showerror("JSON Error", f"Failed to load JSON: {e}")
 
-    def upload_wordlist(self):
-        self.wordlist_file = filedialog.askopenfilename(
-            title="Select Wordlist File", filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")])
-        if self.wordlist_file:
-            self.log("[*] Wordlist loaded successfully.")
-            self.start_btn.config(state="normal")
-
     def start_attack(self):
-        if not self.rainbow_data:
-            self.log("[!] Please load a Rainbow JSON first.")
+        if not self.hashes_file:
+            self.log("[!] Please load a Hash file first.")
             return
-        if not self.wordlist_file:
-            self.log("[!] Please load a Wordlist file first.")
+        if not self.rainbow_data:
+            self.log("[!] Please load a Rainbow JSON file first.")
             return
 
         self.stop_flag.clear()
@@ -577,36 +580,23 @@ class RainbowPage:
         self.log("[*] Stop signal sent. Waiting for thread to terminate...")
 
     def rainbow_attack(self):
-        self.log("Starting Rainbow JSON key matching (safe)...")
-        try:
-            rainbow_keys = {str(k).strip() for k in self.rainbow_data.keys()}
-        except Exception:
-            rainbow_keys = set()
-
+        rainbow_table = {str(k).strip(): v for k, v in self.rainbow_data.items()}
         matches = []
-        total_checked = 0
 
-        with open(self.wordlist_file, "r", encoding="utf-8", errors="ignore") as wf:
-            for line in wf:
+        with open(self.hashes_file, "r", encoding="utf-8", errors="ignore") as hf:
+            for line in hf:
                 if self.stop_flag.is_set():
-                    self.log("[!] Attack stopped by user.")
                     break
-                candidate = line.strip()
-                if not candidate:
+                h = line.strip()
+                if not h:
                     continue
-                total_checked += 1
-                if candidate in rainbow_keys:
-                    matches.append(candidate)
+                if h in rainbow_table:
+                    matches.append((h, rainbow_table[h]))
 
-                if total_checked % 50000 == 0:
-                    self.log(f"[*] Checked {total_checked} candidates...")
-
-        self.log(f"JSON keys: {len(rainbow_keys)}")
-        self.log(f"Candidates checked: {total_checked}")
         if matches:
             self.log(f"[+] Matches found ({len(matches)}):")
-            for m in matches:
-                self.log(f"    {m}")
+            for h, pwd in matches:
+                self.log(f"    {h} → {pwd}")
         else:
             self.log("[-] No matches found in rainbow attack.")
 
