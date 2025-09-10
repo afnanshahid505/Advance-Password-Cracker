@@ -330,10 +330,7 @@ class NTLMPage:
         self.window.destroy()
         
 # ---------------- UNIVERSAL HASH CRACKER ----------------
-import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext
-import hashlib
-import threading
+
 
 class UniversalHashCrackerPage:
     def __init__(self, parent):
@@ -606,6 +603,95 @@ class RainbowPage:
     def close(self):
         self.stop_flag.set()
         self.window.destroy()
+#web brute force 
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import threading
+import requests
+
+stop_event = threading.Event()
+
+def browse_wordlist():
+    filepath = filedialog.askopenfilename(title="Select Wordlist File")
+    if filepath:
+        wordlist_entry.delete(0, tk.END)
+        wordlist_entry.insert(0, filepath)
+
+def brute_force(url, username, wordlist_file, output_text):
+    failure_indicators = [
+        "invalid",
+        "unauthorized",
+        "login failed",
+        "error",
+        "denied",
+        "incorrect",
+        "401 unauthorized"
+    ]
+    stop_event.clear()
+    try:
+        with open(wordlist_file, 'r') as file:
+            for password in file:
+                if stop_event.is_set():
+                    output_text.insert(tk.END, "Attack stopped by user. Password not found.\n")
+                    messagebox.showinfo("Stopped", "Attack stopped. Password not found.")
+                    return
+                password = password.strip()
+                output_text.insert(tk.END, f"Trying password: {password}\n")
+                output_text.see(tk.END)
+                output_text.update()
+                response = requests.get(url, auth=(username, password))
+                if response.status_code == 200:
+                    content_lower = response.text.lower()
+                    if not any(fail in content_lower for fail in failure_indicators):
+                        output_text.insert(tk.END, f"Password found: {password}\n")
+                        messagebox.showinfo("Success", f"Password found: {password}")
+                        return
+        output_text.insert(tk.END, "Password not found in wordlist.\n")
+        messagebox.showinfo("Result", "Password not found in wordlist.")
+    except Exception as e:
+        messagebox.showerror("Error", str(e))
+
+def start_brute_force():
+    url = url_entry.get()
+    username = username_entry.get()
+    wordlist_file = wordlist_entry.get()
+    if not url or not username or not wordlist_file:
+        messagebox.showwarning("Input error", "Please fill all fields.")
+        return
+    output_text.delete(1.0, tk.END)
+    threading.Thread(target=brute_force, args=(url, username, wordlist_file, output_text), daemon=True).start()
+
+def stop_brute_force():
+    stop_event.set()
+
+def open_bruteforce_window():
+    global url_entry, username_entry, wordlist_entry, output_text
+
+    brute_window = tk.Toplevel()
+    brute_window.title("HTTP Basic Auth Brute Force")
+
+    tk.Label(brute_window, text="URL:").grid(row=0, column=0, sticky="e")
+    url_entry = tk.Entry(brute_window, width=50)
+    url_entry.grid(row=0, column=1, padx=5, pady=5)
+
+    tk.Label(brute_window, text="Username:").grid(row=1, column=0, sticky="e")
+    username_entry = tk.Entry(brute_window, width=50)
+    username_entry.grid(row=1, column=1, padx=5, pady=5)
+
+    tk.Label(brute_window, text="Wordlist:").grid(row=2, column=0, sticky="e")
+    wordlist_entry = tk.Entry(brute_window, width=50)
+    wordlist_entry.grid(row=2, column=1, padx=5, pady=5)
+    tk.Button(brute_window, text="Browse", command=browse_wordlist).grid(row=2, column=2, padx=5)
+
+    tk.Button(brute_window, text="Start Brute Force", command=start_brute_force).grid(row=3, column=1, pady=10)
+    tk.Button(brute_window, text="Stop", command=stop_brute_force).grid(row=3, column=2, pady=10, padx=5)
+
+    output_text = tk.Text(brute_window, height=15, width=70)
+    output_text.grid(row=4, column=0, columnspan=3, padx=5, pady=5)
+
+    brute_window.mainloop()
+       
+       
 
 
 # ---------------- MAIN INTERFACE ----------------
@@ -616,9 +702,9 @@ root.geometry("500x400")
 # Background image
 bg_image = Image.open("images/background.jpg")
 bg_image = bg_image.resize((1500, 1400))
-bg_photo = ImageTk.PhotoImage(bg_image)
+root.bg_photo = ImageTk.PhotoImage(bg_image)
 
-bg_label = tk.Label(root, image=bg_photo)
+bg_label = tk.Label(root, image=root.bg_photo)
 bg_label.place(relwidth=1, relheight=1)
 
 # Heading
@@ -655,6 +741,8 @@ btn_rainbow = tk.Button(root, text="Rainbow Attack", bg="#EFF552", fg="#0F0F14",
                         font=("Arial", 20, "bold"), width=30,
                         command=lambda: RainbowPage(root))
 btn_rainbow.pack(pady=5, padx=(300, 0))
+btn_bruteforce=tk.Button(root,text="Web-Brute-Force",bg="#EFF552",fg="#0F0F14",font=("Arial",20,"bold"),width=30,command=open_bruteforce_window)
+btn_bruteforce.pack(pady=5,padx=(300,0))
 
 
 root.mainloop()
