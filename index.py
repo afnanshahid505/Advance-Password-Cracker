@@ -604,10 +604,7 @@ class RainbowPage:
         self.stop_flag.set()
         self.window.destroy()
 #web brute force 
-import tkinter as tk
-from tkinter import filedialog, messagebox
-import threading
-import requests
+
 
 stop_event = threading.Event()
 
