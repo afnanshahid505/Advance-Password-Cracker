@@ -603,7 +603,7 @@ class RainbowPage:
     def close(self):
         self.stop_flag.set()
         self.window.destroy()
-#web brute force 
+#---------- Web Brute Force------------------
 
 
 stop_event = threading.Event()
@@ -738,7 +738,7 @@ btn_rainbow = tk.Button(root, text="Rainbow Attack", bg="#EFF552", fg="#0F0F14",
                         font=("Arial", 20, "bold"), width=30,
                         command=lambda: RainbowPage(root))
 btn_rainbow.pack(pady=5, padx=(300, 0))
-btn_bruteforce=tk.Button(root,text="Web-Brute-Force",bg="#EFF552",fg="#0F0F14",font=("Arial",20,"bold"),width=30,command=open_bruteforce_window)
+btn_bruteforce=tk.Button(root,text="Web-Brute-Force",bg="#F473A2",fg="#0F0F14",font=("Arial",20,"bold"),width=30,command=open_bruteforce_window)
 btn_bruteforce.pack(pady=5,padx=(300,0))
 
 
